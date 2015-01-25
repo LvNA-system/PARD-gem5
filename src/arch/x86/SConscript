@@ -1,0 +1,14 @@
+# -*- mode:python -*-
+
+Import('*')
+
+SimObject('PARDX86LocalApic.py')
+SimObject('PARDX86TLB.py')
+SimObject('PARDg5VSystem.py')
+
+Source('pard_tlb.cc')
+Source('pard_interrupts.cc')
+Source('pardg5v_system.cc')
+Source('pardg5v_system_cp.cc')
+
+DebugFlag('PARDg5VSystem')

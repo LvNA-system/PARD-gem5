@@ -1,0 +1,7 @@
+build/
+.hg*
+*.pyc
+a.out
+m5out
+.reviewboardrc
+*.swp

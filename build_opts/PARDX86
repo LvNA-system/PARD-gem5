@@ -1,0 +1,4 @@
+TARGET_ISA = 'x86'
+CPU_MODELS = ''
+PROTOCOL='MI_example'
+ENABLE_PARD = True
