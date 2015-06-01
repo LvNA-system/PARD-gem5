@@ -1,3 +1,4 @@
+#include "debug/PARDMemoryCtrl.hh"
 #include "mem/pard_mem_ctrl.hh"
 
 PARDMemoryCtrl::PARDMemoryCtrl(const PARDMemoryCtrlParams* p)
@@ -37,10 +38,12 @@ PARDMemoryCtrl::getAddrRanges() const
 Addr
 PARDMemoryCtrl::remapAddr(uint16_t DSid, Addr addr) const
 {
-    if (DSid < 4)
-        return addr + DSid*0x80000000;
+    if (DSid < 4) {
+        DPRINTF(PARDMemoryCtrl, "[%d] 0x%016x ==> 0x%016x\n", DSid, addr, addr + (uint64_t)DSid*0x80000000);
+        return addr + (uint64_t)DSid*0x80000000;
+    }
     else {
-        warn_once("PARDMemoryCtrl::remapAddr(): unknown DSid 0x%x\n", DSid);
+        panic("PARDMemoryCtrl::remapAddr(): unknown DSid 0x%x\n", DSid);
         return addr;
     }
 }

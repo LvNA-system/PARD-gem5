@@ -62,7 +62,9 @@ class PARDg5VICHCP(ControlPlane):
     Type = 0x49
     IDENT = "PARDg5VICHCP"
 
-class PARDg5VICH(NoncoherentXBar):
+    param_table_entries = Param.Int(32, "Number of parameter table entries")
+
+class PARDg5VICH(Bridge):
     type = 'PARDg5VICH'
     cxx_header = "dev/cellx/ich.hh"
     platform = Param.Platform(Parent.any, "Platform this device is part of")
@@ -70,25 +72,30 @@ class PARDg5VICH(NoncoherentXBar):
     # PARDg5VICHCP Control Plane
     cp = Param.PARDg5VICHCP(PARDg5VICHCP(), "Control plane for PARDg5-V ICH")
 
+    # ICH interface logic
+    remapper = PARDg5VICHRemapper()
+    xbar = NoncoherentXBar()
+    ranges = [AddrRange(x86IOAddress(0), size=0x400),
+              AddrRange(     0xFEC00000, size=0x14)]
+
+    #
+    # Internal Chipsets: CMOS, I/O APIC, PIT*4, UART*4
+    #
     _cmos = Cmos(pio_addr=x86IOAddress(0x70))
     _io_apic = I82094AX(pio_addr=0xFEC00000)
     _pits = [I8254(pio_addr=x86IOAddress(0x40)),
              I8254(pio_addr=x86IOAddress(0x44)),
              I8254(pio_addr=x86IOAddress(0x48)),
              I8254(pio_addr=x86IOAddress(0x4C))]
-
-    # Serial port and terminal
-    com_1 = I8250X(pio_addr=x86IOAddress(0x3f8), terminal=Terminal())
-    com_2 = I8250X(pio_addr=x86IOAddress(0x2f8), terminal=Terminal())
-    com_3 = I8250X(pio_addr=x86IOAddress(0x3e8), terminal=Terminal())
-    com_4 = I8250X(pio_addr=x86IOAddress(0x2e8), terminal=Terminal())
-
+    _serials = [I8250X(pio_addr=x86IOAddress(0x3f8), terminal=Terminal()),
+                I8250X(pio_addr=x86IOAddress(0x2f8), terminal=Terminal()),
+                I8250X(pio_addr=x86IOAddress(0x3e8), terminal=Terminal()),
+                I8250X(pio_addr=x86IOAddress(0x2e8), terminal=Terminal())]
 
     cmos = Param.Cmos(_cmos, "CMOS memory and real time clock device")
     io_apic = Param.I82094AX(_io_apic, "I/O APIC")
     pits = VectorParam.I8254(_pits, "Programmable interval timer")
-
-    remapper = PARDg5VICHRemapper()
+    serials = VectorParam.I8250X(_serials, "Serial port and terminal")
 
     # "Non-existant" devices
     fake_devices = [
@@ -119,27 +126,22 @@ class PARDg5VICH(NoncoherentXBar):
            X86IntLine(source=self.pits[1].int_pin, sink=self.io_apic.pin(1)),
            X86IntLine(source=self.pits[2].int_pin, sink=self.io_apic.pin(2)),
            X86IntLine(source=self.pits[3].int_pin, sink=self.io_apic.pin(3)),
-           X86IntLine(source=self.com_1.int_pin, sink=self.io_apic.pin(4)),
-           X86IntLine(source=self.com_2.int_pin, sink=self.io_apic.pin(5)),
-           X86IntLine(source=self.com_3.int_pin, sink=self.io_apic.pin(6)),
-           X86IntLine(source=self.com_4.int_pin, sink=self.io_apic.pin(7)),
+           X86IntLine(source=self.serials[0].int_pin, sink=self.io_apic.pin(4)),
+           X86IntLine(source=self.serials[1].int_pin, sink=self.io_apic.pin(5)),
+           X86IntLine(source=self.serials[2].int_pin, sink=self.io_apic.pin(6)),
+           X86IntLine(source=self.serials[3].int_pin, sink=self.io_apic.pin(7)),
            X86IntLine(source=self.cmos[0].int_pin, sink=self.io_apic.pin(8))]
 
         # connect internal devices
-        self.io_apic.pio = bus.master
-        devices = [self.cmos] + self.pits + self.fake_devices
+        self.io_apic.pio = self.xbar.master
+        devices = [self.cmos] + self.pits + self.serials + self.fake_devices
         for dev in devices:
-            dev.pio = self.master
-        self.com_1.pio = self.master
-        self.com_2.pio = self.master
-        self.com_3.pio = self.master
-        self.com_4.pio = self.master
+            dev.pio = self.xbar.master
 
         # connect I/O APIC int master to the bus
         self.io_apic.int_master = bus.slave
 
         # connect ICH to the bus
-        self.bridge = Bridge(ranges=[AddrRange(x86IOAddress(0), x86IOAddress(0x400))])
-        bus.master = self.bridge.slave
-        self.bridge.master = self.remapper.slave
-        self.remapper.master = self.slave
+        bus.master = self.slave
+        self.master = self.remapper.slave
+        self.remapper.master = self.xbar.slave

@@ -46,6 +46,7 @@ Source('tag_bridge.cc')
 Source('tag_xbar.cc')
 
 DebugFlag('CoherentTagXBar')
+DebugFlag('PARDMemoryCtrl')
 DebugFlag('PARDSystemXBar')
 DebugFlag('TagAddrMapper')
 DebugFlag('TagBridge')

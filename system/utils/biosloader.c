@@ -26,8 +26,15 @@ struct e820entry {
 struct e820entry e820[] = {
     {0x0000000000000000, 0x0009fc00, 1},	// LowMem
     {0x000000000009fc00, 0x00060400, 2},	// BIOS Reserved
+/*
+    //2GB Memory Config
     {0x0000000000100000, 0x7ff00000, 1},	// Memory < 3GB
     {0x0000000080000000, 0x40000000, 2},	// HOLE between [mem_max, 3GB)
+*/
+    //32MB Memory Config
+    {0x0000000000100000, 0x01f00000, 1},	// Memory < 3GB
+    {0x0000000002000000, 0xBE000000, 2},	// HOLE between [mem_max, 3GB)
+
     {0x00000000ffff0000, 0x00010000, 2}		// m5 reserved
 };
 uint64_t guestE820Nr = 5;

@@ -1,0 +1,50 @@
+Step to setup PARDg5-V
+===================================
+
+ 1. clone PARDgem5 source
+
+    [           ~]$ git clone http://xxxxx PARDg5-V
+
+ 2. clone gem5 source from gem5.org, change to changeset "10606:a0cb57e1c072",
+    and apply PARD patch
+
+    [           ~]$ hg clone http://repo.gem5.org/gem5 gem5-offical
+    [           ~]$ cd gem5-offical
+    [gem5-offical]$ hg checkout 10606
+    [gem5-offical]$ hg import ../PARDg5V/patch/patch.stable_2014_12_14
+
+ 3. build gem5
+
+    [gem5-offical]$ scons build/X86/gem5.opt build/X86/gem5.debug
+
+ 4. config PARDg5-V build script "$PARDg5-V/SConstruct", and make sure gem5_path
+    was set correctly.
+
+    gem5_path = '../gem5-offical/'
+
+ 5. build PARDg5-V extension 
+
+    [PARDg5-V]$ scons
+
+ 6. copy kernel binary "support/vmlinux-2.6.28.4-prm" and PRM disk image
+    "support/PARDg5GM.img" to M5_PATH directory
+
+ 7. run PARDg5-V using following command
+
+    [PARDg5-V]$ LINUX_IMAGE=/opt/m5-system/prm/disks/PARDg5GM.img \
+                M5_EXTLIB=./build/PARDX86/libpardg5v_opt.so       \
+                ../gem5-offical/build/X86/gem5.opt configs/PARDg5-V.py \
+                --num-cpus=4 --mem-size=12GB --cpu-clock=100MHz \
+                --kernel=vmlinux-2.6.28.4-prm
+    
+ 8. Wait PRM to startup 
+
+    $ m5term localhost 4456
+
+ 9. Kickstart 4*LDoms(VM)
+
+    PRM$ kickstart 0 
+    PRM$ kickstart 1 
+    PRM$ kickstart 2 
+    PRM$ kickstart 3 
+

@@ -89,6 +89,11 @@ class CellX : public Platform
     virtual Addr calcPciConfigAddr(int bus, int dev, int func);
 
     /**
+     * Calculate the bus[15:8]/dev[7:4]/func[3:0] from given addr
+     */
+    static uint16_t calcPciID(Addr addr);
+
+    /**
      * Calculate the address for an IO location on the PCI bus.
      */
     virtual Addr calcPciIOAddr(Addr addr);

@@ -562,22 +562,22 @@ if m5.SimObject.noCxxHeader:
 # For now the only things handled here are VectorParam types.
 params_to_swig = {}
 # Jiuyue: TODO do not include gem5 classes
-##for name,obj in sorted(sim_objects.iteritems()):
-##    for param in obj._params.local.values():
-##        # load the ptype attribute now because it depends on the
-##        # current version of SimObject.allClasses, but when scons
-##        # actually uses the value, all versions of
-##        # SimObject.allClasses will have been loaded
-##        try:	# Jiuyue
-##            param.ptype
-##
-##            if not hasattr(param, 'swig_decl'):
-##                continue
-##            pname = param.ptype_str
-##            if pname not in params_to_swig:
-##                params_to_swig[pname] = param
-##        except:
-##            continue
+for name,obj in sorted(sim_objects.iteritems()):
+    for param in obj._params.local.values():
+        # load the ptype attribute now because it depends on the
+        # current version of SimObject.allClasses, but when scons
+        # actually uses the value, all versions of
+        # SimObject.allClasses will have been loaded
+        try:	# Jiuyue
+            param.ptype
+
+            if not hasattr(param, 'swig_decl'):
+                continue
+            pname = param.ptype_str
+            if pname not in params_to_swig:
+                params_to_swig[pname] = param
+        except:
+            continue
 
 ########################################################################
 #

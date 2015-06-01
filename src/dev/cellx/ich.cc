@@ -38,10 +38,11 @@
 
 using namespace X86ISA;
 
-PARDg5VICH::PARDg5VICH(const Params *p)
-    : NoncoherentXBar(p),
+PARDg5VICH::PARDg5VICH(Params *p)
+    : Bridge(p),
       platform(p->platform), cp(p->cp),
-      ioApic(p->io_apic), cmos(p->cmos), pits(p->pits)
+      ioApic(p->io_apic), cmos(p->cmos), pits(p->pits),
+      serials(p->serials)
 {
     // Let the platform know where we are
     CellX * cellx = dynamic_cast<CellX *>(platform);
@@ -100,6 +101,11 @@ PARDg5VICH::init()
     entry.vector = 0x30;
     ioApic->writeReg(0x30, entry.bottomDW);
     ioApic->writeReg(0x31, entry.topDW);
+
+    /*
+     * Bridge initialize
+     */
+    Bridge::init();
 }
 
 Addr

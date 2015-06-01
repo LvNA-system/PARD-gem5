@@ -1,0 +1,668 @@
+diff -r a0cb57e1c072 SConstruct
+--- a/SConstruct	Sun Dec 14 16:21:04 2014 -0600
++++ b/SConstruct	Tue Feb 03 15:04:15 2015 +0800
+@@ -319,7 +319,7 @@
+ ###################################################
+ 
+ # Find default configuration & binary.
+-Default(environ.get('M5_DEFAULT_BINARY', 'build/ALPHA/gem5.debug'))
++Default(environ.get('M5_DEFAULT_BINARY', 'build/X86/gem5.opt'))
+ 
+ # helper function: find last occurrence of element in list
+ def rfind(l, elt, offs = -1):
+@@ -559,6 +559,8 @@
+     # Add selected sanity checks from -Wextra
+     main.Append(CXXFLAGS=['-Wmissing-field-initializers',
+                           '-Woverloaded-virtual'])
++    # Add export dynamic ldflags
++    main.Append(LINKFLAGS=['-rdynamic'])
+ else:
+     print termcap.Yellow + termcap.Bold + 'Error' + termcap.Normal,
+     print "Don't know what compiler options to use for your compiler."
+diff -r a0cb57e1c072 build_opts/X86
+--- a/build_opts/X86	Sun Dec 14 16:21:04 2014 -0600
++++ b/build_opts/X86	Tue Feb 03 15:04:15 2015 +0800
+@@ -1,3 +1,3 @@
+ TARGET_ISA = 'x86'
+-CPU_MODELS = 'AtomicSimpleCPU,O3CPU,TimingSimpleCPU'
++CPU_MODELS = 'AtomicSimpleCPU,O3CPU,TimingSimpleCPU,MinorCPU'
+ PROTOCOL = 'MI_example'
+diff -r a0cb57e1c072 configs/common/SysPaths.py
+--- a/configs/common/SysPaths.py	Sun Dec 14 16:21:04 2014 -0600
++++ b/configs/common/SysPaths.py	Tue Feb 03 15:04:15 2015 +0800
+@@ -33,39 +33,46 @@
+ config_path = os.path.dirname(os.path.abspath(__file__))
+ config_root = os.path.dirname(config_path)
+ 
++def searchpath(path, file):
++    for p in path:
++        f = joinpath(p, file)
++        if os.path.exists(f):
++            return f
++    raise IOError, "Can't find file '%s' on path." % file
++
+ def disk(file):
+     system()
+-    return joinpath(disk.dir, file)
++    return searchpath(disk.path, file)
+ 
+ def binary(file):
+     system()
+-    return joinpath(binary.dir, file)
++    return searchpath(binary.path, file)
+ 
+ def script(file):
+     system()
+-    return joinpath(script.dir, file)
++    return searchpath(script.path, file)
+ 
+ def system():
+-    if not system.dir:
++    if not system.path:
+         try:
+-                path = env['M5_PATH'].split(':')
++            path = env['M5_PATH'].split(':')
+         except KeyError:
+-                path = [ '/dist/m5/system', '/n/poolfs/z/dist/m5/system' ]
++            path = [ '/dist/m5/system', '/n/poolfs/z/dist/m5/system' ]
+ 
+-        for system.dir in path:
+-            if os.path.isdir(system.dir):
+-                break
+-        else:
+-            raise ImportError, "Can't find a path to system files."
++        # filter out non-existent directories
++        system.path = filter(os.path.isdir, path)
+ 
+-    if not binary.dir:
+-        binary.dir = joinpath(system.dir, 'binaries')
+-    if not disk.dir:
+-        disk.dir = joinpath(system.dir, 'disks')
+-    if not script.dir:
+-        script.dir = joinpath(config_root, 'boot')
++        if not system.path:
++            raise IOError, "Can't find a path to system files."
+ 
+-system.dir = None
+-binary.dir = None
+-disk.dir = None
+-script.dir = None
++    if not binary.path:
++        binary.path = [joinpath(p, 'binaries') for p in system.path]
++    if not disk.path:
++        disk.path = [joinpath(p, 'disks') for p in system.path]
++    if not script.path:
++        script.path = [joinpath(config_root, 'boot')]
++
++system.path = None
++binary.path = None
++disk.path = None
++script.path = None
+diff -r a0cb57e1c072 src/arch/x86/cpuid.cc
+--- a/src/arch/x86/cpuid.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/cpuid.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -96,15 +96,8 @@
+                         stringToRegister(vendorString + 8));
+                 break;
+               case FamilyModelSteppingBrandFeatures:
+-                /** Features Enabling
+-                 * rdx, enabling most of the features except:
+-                 * FXSR, FFXSR, Page1GB in EDX
+-                 *
+-                 * rcx, disabling most of the features except:
+-                 * SSE4A, XOP, FMA4 in ECX
+-                 */
+                 result = CpuidResult(0x00020f51, 0x00000405,
+-                                     0xe3d3fbff, 0x00010840);
++                                     0xe3d3fbff, 0x00000001);
+                 break;
+               case NameString1:
+               case NameString2:
+@@ -160,15 +153,8 @@
+                         stringToRegister(vendorString + 8));
+                 break;
+               case FamilyModelStepping:
+-                /** Features Enabling
+-                 * rdx, enabling most of the features except:
+-                 * HTT in EDX
+-                 *
+-                 * rcx, disabling most of the features except:
+-                 * SSE3, SSSE3, FMA, SSE41, XSAVE, AVX in ECX
+-                 */
+                 result = CpuidResult(0x00020f51, 0x00000805,
+-                                     0xe7dbfbff, 0x14081201);
++                                     0xe7dbfbff, 0x00000001);
+                 break;
+               default:
+                 warn("x86 cpuid: unimplemented function %u", funcNum);
+diff -r a0cb57e1c072 src/arch/x86/intmessage.hh
+--- a/src/arch/x86/intmessage.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/intmessage.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -82,6 +82,8 @@
+         RequestPtr req = new Request(x86InterruptAddress(id, offset),
+                                      size, Request::UNCACHEABLE,
+                                      Request::intMasterId);
++        // majiuyue: temporary 0xC800
++        req->setDSid(0xC800);
+         PacketPtr pkt = new Packet(req, MemCmd::MessageReq);
+         pkt->allocate();
+         return pkt;
+diff -r a0cb57e1c072 src/arch/x86/pagetable_walker.cc
+--- a/src/arch/x86/pagetable_walker.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/pagetable_walker.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -513,6 +513,9 @@
+         flags.set(Request::UNCACHEABLE, uncacheable);
+         RequestPtr request =
+             new Request(nextRead, oldRead->getSize(), flags, walker->masterId);
++        // majiuyue: temporary 0xFF01
++        if (this->req && this->req->hasDSid())
++            request->setDSid(this->req->getDSid());
+         read = new Packet(request, MemCmd::ReadReq);
+         read->allocate();
+         // If we need to write, adjust the read packet to write the modified
+@@ -584,6 +587,9 @@
+         flags.set(Request::UNCACHEABLE);
+     RequestPtr request = new Request(topAddr, dataSize, flags,
+                                      walker->masterId);
++    // majiuyue: temporary 0xFF02
++    if (this->req && this->req->hasDSid())
++        request->setDSid(this->req->getDSid());
+     read = new Packet(request, MemCmd::ReadReq);
+     read->allocate();
+ }
+diff -r a0cb57e1c072 src/arch/x86/pagetable_walker.hh
+--- a/src/arch/x86/pagetable_walker.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/pagetable_walker.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -164,7 +164,7 @@
+ 
+       public:
+         // Kick off the state machine.
+-        Fault start(ThreadContext * _tc, BaseTLB::Translation *translation,
++        virtual Fault start(ThreadContext * _tc, BaseTLB::Translation *translation,
+                 RequestPtr req, BaseTLB::Mode mode);
+         Fault startFunctional(ThreadContext * _tc, Addr &addr,
+                 unsigned &logBytes, BaseTLB::Mode mode);
+diff -r a0cb57e1c072 src/arch/x86/system.cc
+--- a/src/arch/x86/system.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/system.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -324,6 +324,14 @@
+     //Write out the Intel MP Specification configuration table
+     writeOutMPTable(ebdaPos, fixed, table);
+     ebdaPos += (fixed + table);
++
++    // Set MTRR Register
++    tc->setMiscReg(MISCREG_MTRR_PHYS_BASE_0, 0x0000000000000006);       // Base: 0x0, Type: WriteBack
++    tc->setMiscReg(MISCREG_MTRR_PHYS_MASK_0, 0xFFFFFFFF80000800);       // Size: 2048MB, VALID
++    tc->setMiscReg(MISCREG_MTRR_PHYS_BASE_1, 0x0000000080000006);       // Base: 2048MB, Type: WriteBack
++    tc->setMiscReg(MISCREG_MTRR_PHYS_MASK_1, 0xFFFFFFFFC0000800);       // Size: 1024MB, VALID
++    tc->setMiscReg(MISCREG_MTRR_PHYS_BASE_2, 0x00000000C0000000);       // Base: 3072MB, Type: Uncache
++    tc->setMiscReg(MISCREG_MTRR_PHYS_MASK_2, 0xFFFFFFFFC0000800);       // Size: 1024MB, VALID
+ }
+ 
+ void
+diff -r a0cb57e1c072 src/arch/x86/tlb.hh
+--- a/src/arch/x86/tlb.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/arch/x86/tlb.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -121,13 +121,13 @@
+             return ++lruSeq;
+         }
+ 
+-        Fault translateAtomic(RequestPtr req, ThreadContext *tc, Mode mode);
+-        void translateTiming(RequestPtr req, ThreadContext *tc,
++        virtual Fault translateAtomic(RequestPtr req, ThreadContext *tc, Mode mode);
++        virtual void translateTiming(RequestPtr req, ThreadContext *tc,
+                 Translation *translation, Mode mode);
+         /** Stub function for compilation support of CheckerCPU. x86 ISA does
+          *  not support Checker model at the moment
+          */
+-        Fault translateFunctional(RequestPtr req, ThreadContext *tc, Mode mode);
++        virtual Fault translateFunctional(RequestPtr req, ThreadContext *tc, Mode mode);
+ 
+         /**
+          * Do post-translation physical address finalization.
+diff -r a0cb57e1c072 src/cpu/simple/timing.cc
+--- a/src/cpu/simple/timing.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/cpu/simple/timing.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -378,6 +378,9 @@
+     buildPacket(pkt2, req2, read);
+ 
+     req->setPhys(req1->getPaddr(), req->getSize(), req1->getFlags(), dataMasterId());
++    // majiuyue: temporary
++    if (req1->hasDSid())
++        req->setDSid(req1->getDSid());
+     PacketPtr pkt = new Packet(req, pkt1->cmd.responseCommand());
+ 
+     pkt->dataDynamic<uint8_t>(data);
+diff -r a0cb57e1c072 src/dev/dma_device.cc
+--- a/src/dev/dma_device.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/dev/dma_device.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -166,6 +166,8 @@
+     for (ChunkGenerator gen(addr, size, sys->cacheLineSize());
+          !gen.done(); gen.next()) {
+         Request *req = new Request(gen.addr(), gen.size(), flag, masterId);
++        // majiuyue: temporary 0x0000
++        req->setDSid(0);
+         req->taskId(ContextSwitchTaskId::DMA);
+         PacketPtr pkt = new Packet(req, cmd);
+ 
+diff -r a0cb57e1c072 src/dev/x86/PARDVectorHelper.py
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/src/dev/x86/PARDVectorHelper.py	Tue Feb 03 15:04:15 2015 +0800
+@@ -0,0 +1,39 @@
++# Copyright (c) 2008 The Regents of The University of Michigan
++# All rights reserved.
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions are
++# met: redistributions of source code must retain the above copyright
++# notice, this list of conditions and the following disclaimer;
++# redistributions in binary form must reproduce the above copyright
++# notice, this list of conditions and the following disclaimer in the
++# documentation and/or other materials provided with the distribution;
++# neither the name of the copyright holders nor the names of its
++# contributors may be used to endorse or promote products derived from
++# this software without specific prior written permission.
++#
++# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++#
++# Authors: Gabe Black
++
++from m5.params import *
++from m5.proxy import *
++from m5.SimObject import SimObject
++
++class PARDVectorHelper(SimObject):
++    type = 'PARDVectorHelper'
++    abstract = True
++    cxx_header = "dev/x86/cmos.hh"
++    cmos_inst = VectorParam.Cmos("Cmos Vector Inst")
++    i8254_inst = VectorParam.I8254("I8254 Vector Inst")
++
+diff -r a0cb57e1c072 src/dev/x86/SConscript
+--- a/src/dev/x86/SConscript	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/dev/x86/SConscript	Tue Feb 03 15:04:15 2015 +0800
+@@ -68,3 +68,5 @@
+     SimObject('X86IntPin.py')
+     Source('intdev.cc')
+     DebugFlag('IntDevice')
++
++    SimObject('PARDVectorHelper.py')
+diff -r a0cb57e1c072 src/mem/noncoherent_xbar.cc
+--- a/src/mem/noncoherent_xbar.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/noncoherent_xbar.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -105,8 +105,11 @@
+     // determine the source port based on the id
+     SlavePort *src_port = slavePorts[slave_port_id];
+ 
++    DPRINTF(NoncoherentXBar, "recvTimingReq: src %s %s 0x%x\n",
++            src_port->name(), pkt->cmdString(), pkt->getAddr());
++
+     // we should never see express snoops on a non-coherent crossbar
+-    assert(!pkt->isExpressSnoop());
++    //assert(!pkt->isExpressSnoop());
+ 
+     // determine the destination based on the address
+     PortID master_port_id = findPort(pkt->getAddr());
+@@ -114,13 +117,14 @@
+     // test if the layer should be considered occupied for the current
+     // port
+     if (!reqLayers[master_port_id]->tryTiming(src_port)) {
+-        DPRINTF(NoncoherentXBar, "recvTimingReq: src %s %s 0x%x BUSY\n",
+-                src_port->name(), pkt->cmdString(), pkt->getAddr());
++        //DPRINTF(NoncoherentXBar, "recvTimingReq: src %s %s 0x%x BUSY\n",
++        //        src_port->name(), pkt->cmdString(), pkt->getAddr());
++        DPRINTF(NoncoherentXBar, " BUSY\n");
+         return false;
+     }
+ 
+-    DPRINTF(NoncoherentXBar, "recvTimingReq: src %s %s 0x%x\n",
+-            src_port->name(), pkt->cmdString(), pkt->getAddr());
++    //DPRINTF(NoncoherentXBar, "recvTimingReq: src %s %s 0x%x\n",
++    //        src_port->name(), pkt->cmdString(), pkt->getAddr());
+ 
+     // store size and command as they might be modified when
+     // forwarding the packet
+diff -r a0cb57e1c072 src/mem/packet.hh
+--- a/src/mem/packet.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/packet.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -251,6 +251,7 @@
+     /// Are the 'addr' and 'size' fields valid?
+     static const FlagsType VALID_ADDR             = 0x00000100;
+     static const FlagsType VALID_SIZE             = 0x00000200;
++    static const FlagsType VALID_DSID             = 0x00000800;
+     /// Is the data pointer set to a value that shouldn't be freed
+     /// when the packet is destroyed?
+     static const FlagsType STATIC_DATA            = 0x00001000;
+@@ -285,6 +286,9 @@
+     */
+     PacketDataPtr data;
+ 
++    // DSid of this packet
++    uint64_t DSid;
++
+     /// The address of the request.  This address could be virtual or
+     /// physical, depending on the system configuration.
+     Addr addr;
+@@ -559,6 +563,13 @@
+     /// Reset destination field, e.g. to turn a response into a request again.
+     void clearDest() { dest = InvalidPortID; }
+ 
++    uint64_t getDSid() const { assert(flags.isSet(VALID_DSID)); return DSid; }
++    void setDSid(uint64_t DSid) {
++        this->DSid = DSid;
++        flags.set(VALID_DSID);
++    }
++    bool hasDSid() { return flags.isSet(VALID_DSID); }
++
+     Addr getAddr() const { assert(flags.isSet(VALID_ADDR)); return addr; }
+     /**
+      * Update the address of this packet mid-transaction. This is used
+@@ -623,6 +634,12 @@
+             size = req->getSize();
+             flags.set(VALID_SIZE);
+         }
++
++        // request always have a DSid
++        if (req->hasDSid()) {
++            DSid = req->getDSid();
++            flags.set(VALID_DSID);
++        }
+     }
+ 
+     /**
+@@ -631,7 +648,8 @@
+      * req.  this allows for overriding the size/addr of the req.
+      */
+     Packet(const RequestPtr _req, MemCmd _cmd, int _blkSize)
+-        :  cmd(_cmd), req(_req), data(nullptr), addr(0), _isSecure(false),
++        :  cmd(_cmd), req(_req), data(nullptr),
++           DSid(-1), addr(0), _isSecure(false),
+            src(InvalidPortID), dest(InvalidPortID),
+            bytesValidStart(0), bytesValidEnd(0),
+            firstWordDelay(0), lastWordDelay(0),
+@@ -644,6 +662,12 @@
+         }
+         size = _blkSize;
+         flags.set(VALID_SIZE);
++
++        // request always have a DSid
++        if (req->hasDSid()) {
++            DSid = req->getDSid();
++            flags.set(VALID_DSID);
++        }
+     }
+ 
+     /**
+@@ -656,6 +680,7 @@
+     Packet(PacketPtr pkt, bool clear_flags, bool alloc_data)
+         :  cmd(pkt->cmd), req(pkt->req),
+            data(nullptr),
++           DSid(pkt->DSid),
+            addr(pkt->addr), _isSecure(pkt->_isSecure), size(pkt->size),
+            src(pkt->src), dest(pkt->dest),
+            bytesValidStart(pkt->bytesValidStart),
+@@ -684,6 +709,8 @@
+                 allocate();
+             }
+         }
++        if (pkt->flags.isSet(VALID_DSID))
++            flags.set(pkt->flags & VALID_DSID);
+     }
+ 
+     /**
+diff -r a0cb57e1c072 src/mem/physical.cc
+--- a/src/mem/physical.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/physical.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -147,7 +147,7 @@
+     // perform the actual mmap
+     DPRINTF(AddrRanges, "Creating backing store for range %s with size %d\n",
+             range.to_string(), range.size());
+-    int map_flags = MAP_ANON | MAP_PRIVATE;
++    int map_flags = MAP_ANON | MAP_PRIVATE | MAP_NORESERVE;
+     uint8_t* pmem = (uint8_t*) mmap(NULL, range.size(),
+                                     PROT_READ | PROT_WRITE,
+                                     map_flags, -1, 0);
+diff -r a0cb57e1c072 src/mem/port.hh
+--- a/src/mem/port.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/port.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -101,6 +101,9 @@
+     /** Get the port id. */
+     PortID getId() const { return id; }
+ 
++    /** Get the port owner. */
++    MemObject & getOwner() const { return owner; }
++
+ };
+ 
+ /** Forward declaration */
+diff -r a0cb57e1c072 src/mem/port_proxy.cc
+--- a/src/mem/port_proxy.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/port_proxy.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -63,6 +63,8 @@
+     for (ChunkGenerator gen(addr, size, _cacheLineSize); !gen.done();
+          gen.next()) {
+         req.setPhys(gen.addr(), gen.size(), 0, Request::funcMasterId);
++        // majiuyue: temporary 0xA000
++        req.setDSid(0xA000);
+         Packet pkt(&req, MemCmd::WriteReq);
+         pkt.dataStaticConst(p);
+         _port.sendFunctional(&pkt);
+diff -r a0cb57e1c072 src/mem/request.hh
+--- a/src/mem/request.hh	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/mem/request.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -191,6 +191,8 @@
+     static const PrivateFlagsType VALID_THREAD_ID      = 0x00000040;
+     /** Whether or not the sc result is valid. */
+     static const PrivateFlagsType VALID_EXTRA_DATA     = 0x00000080;
++    /** Whether or not the DSid field is valid. */
++    static const PrivateFlagsType VALID_DSID           = 0x00000008;
+ 
+     /** These flags are *not* cleared when a Request object is reused
+        (assigned a new address). */
+@@ -211,6 +213,12 @@
+      */
+     int _size;
+ 
++    /**
++     * The DSid of the request. This field will be set by TLB before
++     * wrap it into a packet, so all the packet will be tagged.
++     */
++    uint16_t _DSid;
++
+     /** The requestor ID which is unique in the system for all ports
+      * that are capable of issuing a transaction
+      */
+@@ -263,7 +271,9 @@
+           _taskId(ContextSwitchTaskId::Unknown), _asid(0), _vaddr(0),
+           _extraData(0), _contextId(0), _threadId(0), _pc(0),
+           translateDelta(0), accessDelta(0), depth(0)
+-    {}
++    {
++        _DSid = 0xFFFF;
++    }
+ 
+     /**
+      * Constructor for physical (e.g. device) requests.  Initializes
+@@ -277,6 +287,7 @@
+           translateDelta(0), accessDelta(0), depth(0)
+     {
+         setPhys(paddr, size, flags, mid);
++        _DSid = 0xFFFF;
+     }
+ 
+     Request(Addr paddr, int size, Flags flags, MasterID mid, Tick time)
+@@ -286,6 +297,7 @@
+           translateDelta(0), accessDelta(0), depth(0)
+     {
+         setPhys(paddr, size, flags, mid, time);
++        _DSid = 0xFFFF;
+     }
+ 
+     Request(Addr paddr, int size, Flags flags, MasterID mid, Tick time, Addr pc)
+@@ -297,6 +309,7 @@
+         setPhys(paddr, size, flags, mid, time);
+         privateFlags.set(VALID_PC);
+         _pc = pc;
++        _DSid = 0xFFFF;
+     }
+ 
+     Request(int asid, Addr vaddr, int size, Flags flags, MasterID mid, Addr pc,
+@@ -308,6 +321,7 @@
+     {
+         setVirt(asid, vaddr, size, flags, mid, pc);
+         setThreadContext(cid, tid);
++        _DSid = 0xFFFF;
+     }
+ 
+     ~Request() {}
+@@ -455,6 +469,29 @@
+         return _size;
+     }
+ 
++    /**
++     * Accessor for DSid.
++     */
++    bool
++    hasDSid() const
++    {
++        return privateFlags.isSet(VALID_DSID);
++    }
++
++    uint16_t
++    getDSid() const
++    {
++        assert(privateFlags.isSet(VALID_DSID));
++        return _DSid;
++    }
++
++    void
++    setDSid(uint16_t DSid)
++    {
++        this->_DSid = DSid;
++        privateFlags.set(VALID_DSID);
++    }
++
+     /** Accessor for time. */
+     Tick
+     time() const
+diff -r a0cb57e1c072 src/python/importer.py
+--- a/src/python/importer.py	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/python/importer.py	Tue Feb 03 15:04:15 2015 +0800
+@@ -35,7 +35,9 @@
+ 
+     def add_module(self, filename, abspath, modpath, code):
+         if modpath in self.modules:
+-            raise AttributeError, "%s already found in importer" % modpath
++            #raise AttributeError, "%s already found in importer" % modpath
++            print "Ignore already exist module %s" % modpath
++            return
+ 
+         self.modules[modpath] = (filename, abspath, code)
+ 
+diff -r a0cb57e1c072 src/sim/SConscript
+--- a/src/sim/SConscript	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/sim/SConscript	Tue Feb 03 15:04:15 2015 +0800
+@@ -53,6 +53,7 @@
+ Source('init.cc', skip_no_python=True)
+ Source('init_signals.cc')
+ Source('main.cc', main=True, skip_lib=True)
++Source('m5extlib.cc')
+ Source('root.cc')
+ Source('serialize.cc')
+ Source('drain.cc')
+diff -r a0cb57e1c072 src/sim/m5extlib.cc
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/src/sim/m5extlib.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -0,0 +1,40 @@
++#include <dlfcn.h>
++
++#include <cstdlib>
++#include <cstring>
++#include <iostream>
++#include <vector>
++
++#include "sim/m5extlib.hh"
++
++static std::vector<void *> extlib_handles;
++
++void initM5ExtLib(char *env_extlib)
++{
++    if(env_extlib != NULL) {
++        std::cout<<"Loading M5 extent library..."<<std::endl;
++        char *extlib = strtok(env_extlib, ":");
++
++        while (extlib) {
++            std::cout<<" -> "<<extlib<<"...";
++            void *handle = dlopen(extlib, RTLD_NOW);
++            if (handle) {
++                std::cout<<"OK"<<std::endl;
++                extlib_handles.push_back(handle);
++            }
++            else {
++                std::cout<<"FAILED\n\r"<<dlerror()<<std::endl;
++            }
++            extlib = strtok(NULL, ":");
++        }
++    }
++}
++
++// clean up extent library
++void finalizeM5ExtLib()
++{
++    for (auto handle : extlib_handles)
++        dlclose(handle);
++}
++
++
+diff -r a0cb57e1c072 src/sim/m5extlib.hh
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/src/sim/m5extlib.hh	Tue Feb 03 15:04:15 2015 +0800
+@@ -0,0 +1,8 @@
++#ifndef __SIM_M5_EXTLIB_HH__
++#define __SIM_M5_EXTLIB_HH__
++
++void initM5ExtLib(char *env_extlib);
++void finalizeM5ExtLib();
++
++#endif
++
+diff -r a0cb57e1c072 src/sim/main.cc
+--- a/src/sim/main.cc	Sun Dec 14 16:21:04 2014 -0600
++++ b/src/sim/main.cc	Tue Feb 03 15:04:15 2015 +0800
+@@ -32,6 +32,7 @@
+ 
+ #include "sim/init.hh"
+ #include "sim/init_signals.hh"
++#include "sim/m5extlib.hh"
+ 
+ // main() is now pretty stripped down and just sets up python and then
+ // calls initM5Python which loads the various embedded python modules
+@@ -42,6 +43,9 @@
+ {
+     int ret;
+ 
++    // Loading extent library is M5_EXTLIB env exists
++    initM5ExtLib(getenv("M5_EXTLIB"));
++
+     // Initialize m5 special signal handling.
+     initSignals();
+ 
+@@ -61,5 +65,8 @@
+     // clean up Python intepreter.
+     Py_Finalize();
+ 
++    // clean up extent library
++    finalizeM5ExtLib();
++
+     return ret;
+ }

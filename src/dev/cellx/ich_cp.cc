@@ -32,18 +32,34 @@
 #include "debug/ControlPlane.hh"
 #include "dev/cellx/ich_cp.hh"
 
+
 using namespace X86ISA;
 
+#define _IO(x) x86IOAddress(x)
+
 PARDg5VICHCP::PARDg5VICHCP(const Params *p)
-    : ControlPlane(p)
+    : ControlPlane(p),
+      param_table_entries(p->param_table_entries)
 {
-    ioInfoData = new char[IOHUB_INFO_SIZE];
-    memset(ioInfoData, 0, IOHUB_INFO_SIZE);
+    paramTable = new struct ParamEntry[param_table_entries];
+    memset(paramTable, -1, sizeof(struct ParamEntry)*param_table_entries);
+    for (int i=0; i<param_table_entries; i++)
+        paramTable[i].flags = 0;
+
+    compoments_nr = 4;
+    compoments = new struct ICH_COMPOMENT[4][ICH_COMPOMENTS_NR] {
+        // COM,             CMOS,            PIT,             I/O APIC
+        {{ _IO(0x3f8), 8, 4 }, { _IO(0x70), 4, 8 }, { _IO(0x40), 4, 0 }, { 0xFEC00000, 0x14, 0xFFFF }},
+        {{ _IO(0x2f8), 8, 5 }, { _IO(0x70), 4, 8 }, { _IO(0x44), 4, 1 }, { 0xFEC00000, 0x14, 0xFFFF }},
+        {{ _IO(0x3e8), 8, 6 }, { _IO(0x70), 4, 8 }, { _IO(0x48), 4, 2 }, { 0xFEC00000, 0x14, 0xFFFF }},
+        {{ _IO(0x2e8), 8, 7 }, { _IO(0x70), 4, 8 }, { _IO(0x4C), 4, 3 }, { 0xFEC00000, 0x14, 0xFFFF }},
+    };
 }
 
 PARDg5VICHCP::~PARDg5VICHCP()
 {
-    delete[] ioInfoData;
+    delete[] paramTable;
+    delete[] compoments;
 }
 
 uint64_t
@@ -80,71 +96,74 @@ PARDg5VICHCP::updateTable(uint16_t DSid, uint32_t addr, uint64_t data)
 uint64_t *
 PARDg5VICHCP::parseAddr(uint32_t addr)
 {
-    // Access ICH Info
-    if (((addr& 0xC0000000) == 0x80000000) &&
-         (addr&~0xC0000000) < IOHUB_INFO_SIZE)
-    {
-        return (uint64_t *)&ioInfoData[addr & ~0xC0000000];
-    }
+    char *ptr = NULL;
+    int offset;
 
-    return NULL;
-}
+    switch (addr & ADDRTYPE_MASK) {
+    // Access IOHub ConfigTable
+    case ADDRTYPE_CFGTBL:
+        {
+            int row = cfgtbl_addr2row(addr);
+            offset = cfgtbl_addr2offset(addr);
 
-void
-PARDg5VICHCP::recvDeviceChange(std::map<PortID, AddrRangeList> devices)
-{
-    char *ptr = ioInfoData;
-    struct ICHInfo *ioInfo = (struct ICHInfo *)ioInfoData;
-
-    ioInfo->device_cnt = devices.size();
-    ptr = (char *)ioInfo->devices;
-
-    for (auto dev : devices) {
-        struct ICHDevice *devInfo = (struct ICHDevice *)ptr;
-        ptr = (char *)devInfo->ranges;
-
-        devInfo->id = dev.first;
-        devInfo->cnt = dev.second.size();
-
-        for (auto r : dev.second) {
-            struct IOAddrRange *rangeInfo = (struct IOAddrRange *)ptr;
-            ptr = (char *)(rangeInfo+1);
-
-            rangeInfo->base = r.start();
-            rangeInfo->size = r.size();
+            switch (cfgtbl_addr2type(addr)) {
+              case CFGTBL_TYPE_PARAM:
+                if ((row < param_table_entries) &&
+                    (offset <= sizeof(struct ParamEntry) - sizeof(uint64_t)))
+                    ptr = (char *)&paramTable[row];
+                break;
+            }
         }
+        break;
+    // Access IOHub Info
+    case ADDRTYPE_SYSINFO:
+        ptr = NULL;
+        break;
     }
+
+    return (ptr ? ((uint64_t *)(ptr + offset)) : NULL);
 }
 
 bool
 PARDg5VICHCP::remapAddr(const uint16_t DSid, const Addr addr,
                           Addr *base, Addr*remapped) const
 {
-    // UART, map COM_1 => {COM_1, COM_2, COM_3, COM_4}
-    if (addr >= x86IOAddress(0x3f8) && addr<x86IOAddress(0x3f8)+8) {
-        Addr remap_base[] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8 };
-        *base = x86IOAddress(0x3f8);
-        *remapped = x86IOAddress(remap_base[DSid]);
-        return true;
+    struct ParamEntry *pParamEntry = NULL;
+    struct ICH_COMPOMENT *pComp = NULL;
+
+    for (int i=0; i<param_table_entries; i++) {
+        if (paramTable[i].DSid == DSid) {
+            pParamEntry = &paramTable[i];
+            break;
+        }
     }
-    // UART, map COM_2/3/4 => Non-existant
-    else if (((addr >= x86IOAddress(0x2f8)) && (addr<x86IOAddress(0x2f8)+8)) ||
-             ((addr >= x86IOAddress(0x3e8)) && (addr<x86IOAddress(0x3e8)+8)) ||
-             ((addr >= x86IOAddress(0x2e8)) && (addr<x86IOAddress(0x2e8)+8))) {
+
+    // No such DSid or ICH not selected for this DSid, return non-exist
+    if (pParamEntry && pParamEntry->selected >= 4)
+        pParamEntry->selected = 0xFFFF;
+    if (!pParamEntry || (pParamEntry->selected == 0xFFFF)) {
         *base = addr;
         *remapped = x86IOAddress(0);
         return true;
     }
-    // PIT
-    else if (addr >= x86IOAddress(0x40) && addr<x86IOAddress(0x40)+4) {
-        Addr remap_base[] = { 0x40, 0x44, 0x48, 0x4c };
-        *base = x86IOAddress(0x40);
-        *remapped = x86IOAddress(remap_base[DSid]);
-        return true;
-    }
-    return false;
-}
+    pComp = compoments[pParamEntry->selected];
 
+    // Check ICH compoments
+    for (int i=0; i<ICH_COMPOMENTS_NR; i++) {
+        if (addr >= pParamEntry->regbase[i] &&
+            addr <  pParamEntry->regbase[i] + pComp[i].regsize)
+        {
+            *base     = pParamEntry->regbase[i];
+            *remapped = pComp[i].regbase;
+            return true;
+        }
+    }
+
+    // No other address
+    *base = addr;
+    *remapped = x86IOAddress(0);
+    return true;
+}
 
 bool
 PARDg5VICHCP::remapInterrupt(
@@ -152,37 +171,16 @@ PARDg5VICHCP::remapInterrupt(
     std::vector<std::pair<uint16_t, int> > &targets)
 {
     targets.clear();
-    /* PIT interrupt */
-    if (line == 0)
-        targets.push_back(std::pair<uint16_t, int>(0, 2));
-    else if (line == 1)
-        targets.push_back(std::pair<uint16_t, int>(1, 2));
-    else if (line == 2)
-        targets.push_back(std::pair<uint16_t, int>(2, 2));
-    else if (line == 3)
-        targets.push_back(std::pair<uint16_t, int>(3, 2));
-    /* UART interrupt */
-    else if (line >= 4 && line<=7) {
-        DPRINTFN("Receive UART InterruptLine: #%d ==> DSid#%d\n", line, line-4);
-        targets.push_back(std::pair<uint16_t, int>(line-4, 4));
-    }
-    /* XXX: send CMOS interrupt to all */
-    else if (line == 8) {
-        for (int i=0; i<4; i++)
-            targets.push_back(std::pair<uint16_t, int>(i, line));
-    }
-    /* XXX: send IDE interrupt to DSid=1 */
-    else if (line == 10)
-        targets.push_back(std::pair<uint16_t, int>(1, line));
-    else {
-        DPRINTFN("Unmapped InterruptLine: #%d\n", line);
-        for (int i=0; i<4; i++)
-            targets.push_back(std::pair<uint16_t, int>(i, line));
+    for (int i=0; i<param_table_entries; i++) {
+        if (paramTable[i].intlines[line] != -1) {
+            targets.push_back(std::pair<uint16_t, int>(
+                paramTable[i].DSid,
+                paramTable[i].intlines[line]));
+        }
     }
 
-    return true;
+    return !targets.empty();
 }
-
 
 PARDg5VICHCP *
 PARDg5VICHCPParams::create()

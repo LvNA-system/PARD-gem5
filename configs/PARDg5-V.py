@@ -140,5 +140,13 @@ pardsys.cp.connectToNetwork(prm.cpn)
 pardsys.iobus.cp.connectToNetwork(prm.cpn)
 pardsys.cellx.ich.cp.connectToNetwork(prm.cpn)
 
+#### Change default UART port
+prm.pc.com_1.terminal.port = 4456;
+pardsys.cellx.ich.serials[0].terminal.port = 4456;
+pardsys.cellx.ich.serials[1].terminal.port = 4456;
+pardsys.cellx.ich.serials[2].terminal.port = 4456;
+pardsys.cellx.ich.serials[3].terminal.port = 4456;
+##############################################
+
 XSimulation.setWorkCountOptions(pardsys, options)
 XSimulation.run(options, root, pardsys, FutureClass)

@@ -32,6 +32,7 @@
 #define __DEV_CELLX_ICH_HH__
 
 #include "dev/cellx/ich_cp.hh"
+#include "mem/bridge.hh"
 #include "mem/noncoherent_xbar.hh"
 #include "mem/tag_addr_mapper.hh"
 #include "params/PARDg5VICH.hh"
@@ -45,7 +46,7 @@ namespace X86ISA
     class I82094AX;
 }
 
-class PARDg5VICH : public NoncoherentXBar
+class PARDg5VICH : public Bridge
 {
     friend class PARDg5VICHRemapper;
     friend class X86ISA::I82094AX;
@@ -61,6 +62,7 @@ class PARDg5VICH : public NoncoherentXBar
     X86ISA::I82094AX * ioApic;
     X86ISA::Cmos * cmos;
     std::vector<X86ISA::I8254 *> pits;
+    std::vector<X86ISA::I8250X *> serials;
 
   protected:
 
@@ -68,7 +70,7 @@ class PARDg5VICH : public NoncoherentXBar
 
   public:
     typedef PARDg5VICHParams Params;
-    PARDg5VICH(const Params *p);
+    PARDg5VICH(Params *p);
 
     virtual void init();
 
@@ -81,18 +83,26 @@ class PARDg5VICH : public NoncoherentXBar
 
 class PARDg5VICHRemapper : public TagAddrMapper
 {
+  private:
     /**
      * ICH this mapper belong to
      */
     PARDg5VICH *ich;
+    /**
+     * All Memory AddrRange
+     */
+    AddrRangeList AllMemory;
 
   public:
     PARDg5VICHRemapper(const PARDg5VICHRemapperParams *p)
-        : TagAddrMapper(p), ich(p->ich) { }
+        : TagAddrMapper(p), ich(p->ich)
+    {
+        AllMemory.push_back(AddrRange(0, (Addr)(-1)));
+    }
     virtual ~PARDg5VICHRemapper() { }
 
     virtual AddrRangeList getAddrRanges() const
-    { return ich->getAddrRanges(); }
+    { return AllMemory; }
 
   protected:
     virtual Addr remapAddr(Addr addr, uint16_t DSid) const

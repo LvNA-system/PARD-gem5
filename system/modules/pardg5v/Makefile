@@ -22,7 +22,7 @@ endif
 EXTRA_CFLAGS  += $(DEBFLAGS) -std=gnu99 -I$(CPAINCDIR)
 
 obj-m := pardg5v.o
-ALL_CTRLPLANE := sys.o #cache.o memcntrl.o
+ALL_CTRLPLANE := sys.o ioh.o ich.o #cache.o memcntrl.o
 pardg5v-objs := init.o ctrlplane.o cpfops.o $(ALL_CTRLPLANE) # generic.o 
 
 

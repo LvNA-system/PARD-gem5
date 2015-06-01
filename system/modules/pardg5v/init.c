@@ -25,7 +25,7 @@ pardg5v_cp_probe(struct control_plane_device *dev, const struct control_plane_id
 {
     struct control_plane_op *cpop = get_control_plane_op(dev->type);
     if (!cpop) {
-        printk(KERN_ERR "pardg5v: probe: cannot get ops for control plane type '%c'.",
+        printk(KERN_ERR "pardg5v: probe: cannot get ops for control plane type '%c'.\n",
                dev->type);
         return -ENODEV;
     }
@@ -42,6 +42,8 @@ pardg5v_cp_remove(struct control_plane_device *dev)
 
 static struct control_plane_id pardg5v_cp_tbl [] = {
     {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'S'},	/* PARDg5VSysCP */
+    {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'H'},	/* PARDg5VIOHCP */
+    {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'I'},      /* PARDg5VICHCP */
     {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'C'},	/* CacheCP      */
     {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'M'},	/* MemCP        */
     {CP_VENDOR_ID_FSG, CP_DEVICE_ID_PARDG5V, 'B'},	/* BridgeCP     */

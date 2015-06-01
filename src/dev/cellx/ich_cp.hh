@@ -45,64 +45,40 @@
 #include "params/PARDg5VICHCP.hh"
 #include "prm/ControlPlane.hh"
 
+
+#define ICH_COMPOMENTS_NR       4
+
 /**
  * Config Table
  */
 struct ParamEntry {
-    PortID port;
+    uint32_t flags;
     uint16_t DSid;
-    struct {
-        uint32_t base;
-        uint32_t size;
-        uint32_t remapped;
-    } ranges[5];
-    uint8_t is_pard_enabled;
+    uint16_t selected;
+    uint64_t regbase[ICH_COMPOMENTS_NR];
+    int intlines[24];
 };
-
-/**
- * State Table
- */
-struct StatEntry {	// Indexed by Port
-    int range_nr;
-    struct {
-        uint32_t base;
-        uint32_t size;
-    } ranges[5];
-    // IRQ remapping?
-};
-
 
 /**
  * SystemInfo Table
  */
-struct IOAddrRange{
-    Addr base;
-    Addr size;
+struct ICH_COMPOMENT {
+    uint64_t regbase;
+    uint32_t regsize;
+    uint32_t intline;
 };
 
-struct ICHDevice
-{
-    PortID id;
-    uint16_t cnt;
-    uint32_t __res;
-    struct IOAddrRange ranges[];
-};
-
-struct ICHInfo
-{
-    uint16_t device_cnt;
-    uint16_t __res;
-    uint32_t __res2;
-    struct ICHDevice devices[];
+struct ICHInfo {
+    struct ICH_COMPOMENT compoments[][ICH_COMPOMENTS_NR];
 };
 
 class PARDg5VICHCP : public ControlPlane
 {
   protected:
-    //struct StatEntry statTable[32];
-    //struct ParamEntry paramTable[32];
-    char *ioInfoData;
-    #define IOHUB_INFO_SIZE	2048
+    int param_table_entries;
+    int compoments_nr;
+    struct ParamEntry *paramTable;
+    struct ICH_COMPOMENT (*compoments)[ICH_COMPOMENTS_NR];
 
   public:
     typedef PARDg5VICHCPParams Params;
@@ -112,8 +88,6 @@ class PARDg5VICHCP : public ControlPlane
   public:
     virtual uint64_t queryTable(uint16_t DSid, uint32_t addr);
     virtual void updateTable(uint16_t DSid, uint32_t addr, uint64_t data);
-
-    void recvDeviceChange(std::map<PortID, AddrRangeList> devices);
 
     bool remapAddr(const uint16_t DSid, const Addr addr,
                    Addr *base, Addr*remapped) const;

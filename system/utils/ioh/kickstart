@@ -1,0 +1,54 @@
+#!/bin/sh
+
+IOHCP=""
+SYSCP=""
+
+# search for IOHCP/SYSCP device
+for i in `ls /dev/cp[0-9]`
+do
+    val="`cat $i`"
+    if [ "$val" = "PARDg5VIOHCP" ]
+    then
+        IOHCP=$i
+    elif [ "$val" = "PARDg5vSysCP" ]
+    then
+        SYSCP=$i
+    fi
+done
+
+if [ "$IOHCP" = "" ]
+then
+    echo "No IOHub control plane found!"
+    exit
+fi
+
+if [ "$SYSCP" = "" ]
+then
+    echo "No System control plane found!"
+    exit
+fi
+
+DSid=$1
+echo "kickstart LDom#$DSid"
+
+# startup 
+case $DSid in
+  0)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:06.0
+    ;;
+  1)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:07.0
+    ;;
+  2)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:08.0
+    ;;
+  3)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:09.0
+    ;;
+  *)
+    echo "Unknow DSid \"$1\""
+    exit
+esac
+
+biosloader $SYSCP $DSid
+

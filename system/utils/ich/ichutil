@@ -1,0 +1,23 @@
+#!/bin/sh
+
+ICHCP=""
+
+# search for ICHCP device
+for i in `ls /dev/cp[0-9]`
+do
+    val="`cat $i`"
+    if [ "$val" = "PARDg5VICHCP" ]
+    then
+        ICHCP=$i
+    fi
+done
+
+if [ "$ICHCP" = "" ]
+then
+    echo "No ICH control plane found!"
+    exit
+fi
+
+DSid=$1
+
+ich --device=$ICHCP $*

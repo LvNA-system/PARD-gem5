@@ -35,4 +35,19 @@ class ControlPlane : public AbstractControlPlane
     { return dynamic_cast<const Params *>(_params); }
 };
 
+#define ADDRTYPE_MASK		0xC0000000
+#define ADDRTYPE_CFGTBL		0x00000000
+#define ADDRTYPE_CFGMEM		0x40000000
+#define ADDRTYPE_SYSINFO	0x80000000
+
+#define CFGTBL_TYPE_PARAM	0b00
+#define CFGTBL_TYPE_STAT	0b01
+#define CFGTBL_TYPE_TRIGGER	0b10
+
+#define cfgtbl_addr2type(addr)		((addr & 0x30000000)>>28)
+#define cfgtbl_addr2row(addr)		((addr & 0x0003FC00)>>10)
+#define cfgtbl_addr2offset(addr)	(addr & 0x000003FF)
+#define cfgmem_addr2offset(addr)	(addr & 0x00FFFFFF)
+#define sysinfo_addr2offset(addr)	(addr & 0x000000FF)
+
 #endif	// __PRM_CONTROLPLANE_HH__

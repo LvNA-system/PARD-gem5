@@ -30,11 +30,12 @@
 
 Import('*')
 
-SimObject('RootComplex.py')
-
-Source('root_complex.cc')
-
-DebugFlag('RootComplex')
+#SimObject('RootComplex.py')
+#
+#Source('root_complex.cc')
+#
+#DebugFlag('RootComplex')
+#
 #
 #SimObject('PciExpress.py')
 #SimObject('PciEIde.py')

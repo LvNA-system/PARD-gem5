@@ -1,3 +1,5 @@
 ioctltest
 mmaptest
 biosloader
+biosbuilder
+*.o

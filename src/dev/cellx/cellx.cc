@@ -102,6 +102,15 @@ CellX::calcPciConfigAddr(int bus, int dev, int func)
     return (PhysAddrPrefixPciConfig | (func << 8) | (dev << 11));
 }
 
+uint16_t
+CellX::calcPciID(Addr addr)
+{
+    int bus = 0;
+    int dev = ((addr>>11)&0xF);
+    int func = ((addr>>8)&0x7);
+    return ((bus<<8) | (dev<<4) | func);
+}
+
 Addr
 CellX::calcPciIOAddr(Addr addr)
 {

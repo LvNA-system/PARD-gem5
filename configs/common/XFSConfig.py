@@ -30,7 +30,7 @@ from m5.objects import *
 from Benchmarks import *
 from m5.util import *
 
-class CowIdeDisk(IdeDisk):
+class CowIdeDisk(PARDg5VIdeDisk):
     image = CowDiskImage(child=RawDiskImage(read_only=True),
                          read_only=False)
     def childImage(self, ci):
@@ -118,19 +118,53 @@ def makePARDg5VSystem(mem_mode, numCPUs = 1, mdesc = None):
 
     self.intrctrl = IntrControl()
 
-    # AddOn IDE
-    ide_disk0 = CowIdeDisk(driveID='master')
-    ide_disk2 = CowIdeDisk(driveID='master')
-    ide_disk0.childImage(mdesc.disk())
-    ide_disk2.childImage(disk('linux-bigswap2.img'))
-    self.cellx.ide = IdeController(
-        disks=[ide_disk0, ide_disk2],
+    # IDE-0
+    ide0_disk0 = CowIdeDisk(driveID='master')
+    ide0_disk0.childImage(mdesc.disk())
+    self.cellx.ide0 = PARDg5VIdeController(
+        disks=[ide0_disk0],
         pci_func=0, pci_dev=6, pci_bus=0,
-        InterruptLine = 10, 
+        InterruptLine = 10,
         InterruptPin = 1)
-    self.cellx.ide.pio    = self.iobus.master
-    self.cellx.ide.config = self.iobus.master
-    self.cellx.ide.dma    = self.iobus.slave
+    self.cellx.ide0.pio    = self.iobus.master
+    self.cellx.ide0.config = self.iobus.master
+    self.cellx.ide0.dma    = self.iobus.slave
+
+    # IDE-1
+    ide1_disk0 = CowIdeDisk(driveID='master')
+    ide1_disk0.childImage(mdesc.disk())
+    self.cellx.ide1 = PARDg5VIdeController(
+        disks=[ide1_disk0],
+        pci_func=0, pci_dev=7, pci_bus=0,
+        InterruptLine = 11,
+        InterruptPin = 1)
+    self.cellx.ide1.pio    = self.iobus.master
+    self.cellx.ide1.config = self.iobus.master
+    self.cellx.ide1.dma    = self.iobus.slave
+
+    # IDE-2
+    ide2_disk0 = CowIdeDisk(driveID='master')
+    ide2_disk0.childImage(mdesc.disk())
+    self.cellx.ide2 = PARDg5VIdeController(
+        disks=[ide2_disk0],
+        pci_func=0, pci_dev=8, pci_bus=0,
+        InterruptLine = 12,
+        InterruptPin = 1)
+    self.cellx.ide2.pio    = self.iobus.master
+    self.cellx.ide2.config = self.iobus.master
+    self.cellx.ide2.dma    = self.iobus.slave
+
+    # IDE-3
+    ide3_disk0 = CowIdeDisk(driveID='master')
+    ide3_disk0.childImage(mdesc.disk())
+    self.cellx.ide3 = PARDg5VIdeController(
+        disks=[ide3_disk0],
+        pci_func=0, pci_dev=9, pci_bus=0,
+        InterruptLine = 13,
+        InterruptPin = 1)
+    self.cellx.ide3.pio    = self.iobus.master
+    self.cellx.ide3.config = self.iobus.master
+    self.cellx.ide3.dma    = self.iobus.slave
 
     self.boot_osflags = 'earlyprintk=ttyS0 console=ttyS0 lpj=7999923 ' + \
                         'root=/dev/sda1'

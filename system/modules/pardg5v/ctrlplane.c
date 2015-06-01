@@ -4,10 +4,12 @@
 //extern struct control_plane_op cache_cp_op;
 //extern struct control_plane_op memcntrl_cp_op;
 extern struct control_plane_op sys_cp_op;
+extern struct control_plane_op ioh_cp_op;
+extern struct control_plane_op ich_cp_op;
 
 struct control_plane_op *control_plane_tbl [] = {
     //&cache_cp_op, &memcntrl_cp_op,
-    &sys_cp_op,
+    &sys_cp_op, &ioh_cp_op, &ich_cp_op,
     NULL,
 };
 

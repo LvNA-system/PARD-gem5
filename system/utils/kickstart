@@ -1,0 +1,69 @@
+#!/bin/sh
+
+ICHCP=""
+IOHCP=""
+SYSCP=""
+
+# search for ICHCP/IOHCP/SYSCP device
+for i in `ls /dev/cp[0-9]`
+do
+    val="`cat $i`"
+    if [ "$val" = "PARDg5VICHCP" ]
+    then
+        ICHCP=$i
+    elif [ "$val" = "PARDg5VIOHCP" ]
+    then
+        IOHCP=$i
+    elif [ "$val" = "PARDg5vSysCP" ]
+    then
+        SYSCP=$i
+    fi
+done
+
+if [ "$ICHCP" = "" ]
+then
+    echo "No ICH control plane found!"
+    exit
+fi
+
+if [ "$IOHCP" = "" ]
+then
+    echo "No IOHub control plane found!"
+    exit
+fi
+
+if [ "$SYSCP" = "" ]
+then
+    echo "No System control plane found!"
+    exit
+fi
+
+DSid=$1
+echo "kickstart LDom#$DSid"
+
+# startup 
+ich --assign --device=$ICHCP --DSid=$DSid
+case $DSid in
+  0)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:06.0
+    ich --irqmap --device=$ICHCP --DSid=$DSid --from=10 --to=10
+    ;;
+  1)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:07.0
+    ich --irqmap --device=$ICHCP --DSid=$DSid --from=11 --to=11
+    ;;
+  2)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:08.0
+    ich --irqmap --device=$ICHCP --DSid=$DSid --from=12 --to=12
+    ;;
+  3)
+    ioh --assign --device=$IOHCP --DSid=$DSid 00:09.0
+    ich --irqmap --device=$ICHCP --DSid=$DSid --from=13 --to=13
+    ;;
+  *)
+    echo "Unknow DSid \"$1\""
+    exit
+esac
+
+biosloader $SYSCP $DSid
+

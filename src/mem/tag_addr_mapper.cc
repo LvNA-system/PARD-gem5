@@ -80,7 +80,9 @@ TagAddrMapper::recvFunctional(PacketPtr pkt)
 {
     Addr orig_addr = pkt->getAddr();
     pkt->setAddr(remapAddr(orig_addr, pkt->getDSid()));
+    preReqHook(pkt);
     masterPort.sendFunctional(pkt);
+    postRespHook(pkt);
     pkt->setAddr(orig_addr);
 }
 
@@ -98,7 +100,9 @@ TagAddrMapper::recvAtomic(PacketPtr pkt)
 {
     Addr orig_addr = pkt->getAddr();
     pkt->setAddr(remapAddr(orig_addr, pkt->getDSid()));
+    preReqHook(pkt);
     Tick ret_tick =  masterPort.sendAtomic(pkt);
+    postRespHook(pkt);
     pkt->setAddr(orig_addr);
     return ret_tick;
 }
@@ -125,6 +129,7 @@ TagAddrMapper::recvTimingReq(PacketPtr pkt)
     }
 
     pkt->setAddr(remapAddr(orig_addr, pkt->getDSid()));
+    preReqHook(pkt);
 
     // Attempt to send the packet (always succeeds for inhibited
     // packets)
@@ -150,6 +155,8 @@ TagAddrMapper::recvTimingResp(PacketPtr pkt)
               name());
 
     Addr remapped_addr = pkt->getAddr();
+
+    postRespHook(pkt);
 
     // Restore the state and address
     pkt->senderState = receivedState->predecessor;

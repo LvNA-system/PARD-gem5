@@ -87,6 +87,9 @@ class TagAddrMapper : public MemObject
      */
     virtual Addr remapAddr(Addr addr, uint16_t DSid) const = 0;
 
+    virtual void preReqHook(PacketPtr pkt) {}
+    virtual void postRespHook(PacketPtr pkt) {}
+
     class TagAddrMapperSenderState : public Packet::SenderState
     {
 

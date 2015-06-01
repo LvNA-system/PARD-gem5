@@ -3,23 +3,22 @@
 #
 
 DISK := /opt/m5-system/prm/disks/PARDg5GM.img
-EXTRA_CFLAGS := -std=gnu99 -static -I../modules/includes/
+CFLAGS := -std=gnu99 -static -I../modules/includes/ -g
 
-UTILS := ioctltest mmaptest biosloader biosbuilder
+UTILS := ioctltest mmaptest biosloader kickstart
 
 all: $(UTILS)
 
+clean:
+	rm -rf $(UTILS)
+
 mmaptest: mmaptest.c
-	gcc $< -o $@ $(EXTRA_CFLAGS)
 
 ioctltest: ioctltest.c
-	gcc $< -o $@ $(EXTRA_CFLAGS)
 
 biosbuilder: biosbuilder.c
-	gcc $< -o $@ $(EXTRA_CFLAGS) -g
 
 biosloader: biosloader.c
-	gcc $< -o $@ $(EXTRA_CFLAGS) -g
 
 install: 
 	sudo mount -o loop,offset=32256 $(DISK) ./.mnt
